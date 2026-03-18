@@ -19,6 +19,7 @@ import numpy as np
 from datetime import timedelta
 from collections import defaultdict
 import writers
+import scenario_engine
 
 
 # ─── ID generators ────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ class _Seq:
         return self._n
 
 
-def run_simulation(cfg, md, dates, demand_array, feeds_dir):
+def run_simulation(cfg, md, dates, demand_array, feeds_dir, story_state=None):
     """
     cfg          : CONFIG dict
     md           : MasterData
@@ -95,6 +96,7 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
     rows_cod  = []   # CustomerOrderDelivery
     rows_sales= []   # SalesHistoryByType
     rows_inv  = []   # Inventory snapshot (final day only)
+    rows_trace = []  # Story diagnostics per day/store/item
 
     # Track outstanding qty per PO line (for status updates)
     # po_outstanding[(po_number, po_line)] = int
@@ -119,11 +121,23 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
     rgap_max     = cfg["remainder_gap_max"]
     base_currency = cfg["base_currency"]
     print_daywise_status = cfg.get("print_daywise_item_status", True)
+    print_only_active_rows = cfg.get("print_daywise_only_active_rows", True)
 
     date_to_idx = {d: i for i, d in enumerate(dates)}
     n_days = len(dates)
 
     print(f"\n  Simulating {n_days} days ({dates[0]} → {dates[-1]}) ...")
+
+    if story_state is None:
+        story_state = {
+            "pack": "none",
+            "dc_to_store_caps": {},
+            "supplier_to_dc_caps": {},
+            "rule_labels": {},
+        }
+
+    shortage_started = False
+    tightness_started = False
 
     for day_num, D in enumerate(dates):
         D_str  = writers.fmt_date(D)
@@ -134,6 +148,8 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
 
         # ── Step 1: Post supplier receipts into DC ────────────────────────────
         events_today = receipt_events.pop(D, [])
+        supplier_caps_today = scenario_engine.get_day_supplier_to_dc_caps(story_state, day_num)
+        supplier_received_today = defaultdict(int)
         for evt in events_today:
             i_item     = evt["item_idx"]
             qty_due    = evt["qty_due"]
@@ -169,6 +185,26 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
                 recv_qty = now_qty
             else:
                 recv_qty = qty_due
+
+            # Optional narrative cap on supplier->DC flow.
+            day_cap = supplier_caps_today.get(i_item)
+            if day_cap is not None:
+                remaining_cap = max(0, int(day_cap) - int(supplier_received_today[i_item]))
+                if recv_qty > remaining_cap:
+                    spill_qty = recv_qty - remaining_cap
+                    recv_qty = remaining_cap
+                    if spill_qty > 0:
+                        receipt_events[D + timedelta(days=1)].append({
+                            "po_number": po_num,
+                            "po_line": po_line,
+                            "item_idx": i_item,
+                            "qty_due": spill_qty,
+                            "supplier_code": supplier,
+                        })
+                supplier_received_today[i_item] += recv_qty
+
+            if recv_qty <= 0:
+                continue
 
             # Update DC stock
             on_hand[DC_IDX, i_item] += recv_qty
@@ -269,6 +305,26 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
                     ship_per_store[top_stores] += 1
 
             dc_shipments[:, i_item] = ship_per_store
+
+        # Optional narrative cap on total DC->store shipments per item/day.
+        day_dc_caps = scenario_engine.get_day_dc_to_store_caps(story_state, day_num)
+        for i_item, cap in day_dc_caps.items():
+            cap = int(max(0, cap))
+            current = int(dc_shipments[:, i_item].sum())
+            if current <= cap:
+                continue
+            if cap == 0:
+                dc_shipments[:, i_item] = 0
+                continue
+
+            proportional = cap * dc_shipments[:, i_item] / current
+            capped = np.floor(proportional).astype(np.int64)
+            remainder = cap - int(capped.sum())
+            if remainder > 0:
+                fracs = proportional - capped
+                top_stores = np.argsort(fracs)[::-1][:remainder]
+                capped[top_stores] += 1
+            dc_shipments[:, i_item] = capped
 
         # Write IBT PO records (one header + line per store that receives stock)
         ibt_total = int(dc_shipments.sum())
@@ -381,6 +437,29 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
                     "TotalOriginalRetail": round(deliv * sell_p, 2),
                 })
 
+        # Story trace feed: one row per day, store, item.
+        for si, store_code in enumerate(md.store_codes):
+            for i_item, item_code_str in enumerate(md.item_codes):
+                demand_qty = int(requested_today[si, i_item])
+                delivered_qty = int(delivered_today[si, i_item])
+                stock_before = int(stock_before_today[si, i_item])
+                stock_left = int(on_hand[si, i_item])
+                unmet = max(0, demand_qty - delivered_qty)
+                dc_ship_qty = int(dc_shipments[si, i_item])
+                rule_label = scenario_engine.get_rule_label(story_state, day_num, si, i_item)
+                rows_trace.append({
+                    "Date": D_str,
+                    "SiteCode": store_code,
+                    "ItemCode": item_code_str,
+                    "StockBefore": stock_before,
+                    "Demand": demand_qty,
+                    "Delivered": delivered_qty,
+                    "UnmetDemand": unmet,
+                    "StockLeft": stock_left,
+                    "DCShipQty": dc_ship_qty,
+                    "RuleLabel": rule_label,
+                })
+
         # ── Step 7: DC supplier PO review (Mondays only) ──────────────────────
         if D.weekday() == review_dow:
             # DC avg daily demand = sum of store smoothed demands
@@ -437,14 +516,19 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
                 on_order_dc[i_item] += order_qty
 
         if print_daywise_status:
-            _print_daywise_status(
+            shortage_started, tightness_started = _print_daywise_status(
                 D=D,
                 md=md,
                 requested_today=requested_today,
                 delivered_today=delivered_today,
                 stock_before_today=stock_before_today,
+                store_needs=store_needs,
+                dc_shipments=dc_shipments,
                 on_hand=on_hand,
                 dc_idx=DC_IDX,
+                print_only_active_rows=print_only_active_rows,
+                shortage_started=shortage_started,
+                tightness_started=tightness_started,
             )
 
         last_on_hand = on_hand.copy()
@@ -476,12 +560,12 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
 
     # ── Write all feeds ───────────────────────────────────────────────────────
     _write_all(feeds_dir, rows_soh, rows_sol, rows_sr,
-               rows_coh, rows_col, rows_cod, rows_sales, rows_inv)
+               rows_coh, rows_col, rows_cod, rows_sales, rows_inv, rows_trace)
 
 
 def _write_all(feeds_dir,
                rows_soh, rows_sol, rows_sr,
-               rows_coh, rows_col, rows_cod, rows_sales, rows_inv):
+               rows_coh, rows_col, rows_cod, rows_sales, rows_inv, rows_trace):
     feed_map = [
         ("SupplierOrderHeader.txt",   rows_soh,   writers.SUPPLIER_ORDER_HEADER_COLUMNS),
         ("SupplierOrderLine.txt",     rows_sol,   writers.SUPPLIER_ORDER_LINE_COLUMNS),
@@ -491,6 +575,7 @@ def _write_all(feeds_dir,
         ("CustomerOrderDelivery.txt", rows_cod,   writers.CUSTOMER_ORDER_DELIVERY_COLUMNS),
         ("SalesHistoryByType.txt",    rows_sales, writers.SALES_HISTORY_COLUMNS),
         ("Inventory.txt",             rows_inv,   writers.INVENTORY_COLUMNS),
+        ("DailyScenarioTrace.txt",    rows_trace, writers.DAILY_SCENARIO_TRACE_COLUMNS),
     ]
     for filename, rows, columns in feed_map:
         writers.write_feed(f"{feeds_dir}/{filename}", rows, columns)
@@ -503,26 +588,83 @@ def _print_daywise_status(
     requested_today,
     delivered_today,
     stock_before_today,
+    store_needs,
+    dc_shipments,
     on_hand,
     dc_idx,
+    print_only_active_rows,
+    shortage_started,
+    tightness_started,
 ):
-    """Print organized day-wise demand and stock left for each store-item."""
+    """Print a compact, narrative-friendly day summary with key flow markers."""
     print("")
-    print(f"  --- Day {D} ---")
-    print("  store      | item           | stock_before | demand | delivered | stock_left")
-    print("  " + "-" * 83)
+    print(f"  === Day {D} ===")
+    print("  Attributes: Demand, FillNeeded, Shipped, Delivered, UnmetDemand")
+    print("              StockBefore, StockLeft, Flags")
+    print("  " + "-" * 72)
+
+    day_has_shortage = False
+    day_has_tightness = False
 
     for si, store_code in enumerate(md.store_codes):
+        print(f"  [{store_code}]")
+        printed_any = False
+
         for i_item, item_code in enumerate(md.item_codes):
             demand_qty = int(requested_today[si, i_item])
             delivered_qty = int(delivered_today[si, i_item])
             stock_before = int(stock_before_today[si, i_item])
             stock_left = int(on_hand[si, i_item])
-            print(
-                f"  {store_code:<10} | {item_code:<14} | "
-                f"{stock_before:>12} | {demand_qty:>6} | {delivered_qty:>9} | {stock_left:>10}"
-            )
+            fill_need = int(store_needs[si, i_item])
+            ship_qty = int(dc_shipments[si, i_item])
+            unmet = max(0, demand_qty - delivered_qty)
 
-    print("  DC stock by item:")
+            # Keep output clean by hiding silent rows unless explicitly requested.
+            if print_only_active_rows and demand_qty == 0 and fill_need == 0 and ship_qty == 0 and unmet == 0:
+                continue
+
+            flags = []
+            if demand_qty > 0:
+                flags.append("D")
+            if fill_need > 0:
+                flags.append("F")
+            if fill_need > ship_qty:
+                flags.append("T")
+                day_has_tightness = True
+            if unmet > 0:
+                flags.append("S")
+                day_has_shortage = True
+            if ship_qty > 0 and demand_qty > 0 and unmet == 0:
+                flags.append("O")
+
+            short_item = item_code[:18]
+            print(f"  {short_item}")
+            print(
+                f"    Demand={demand_qty} FillNeeded={fill_need} Shipped={ship_qty} "
+                f"Delivered={delivered_qty} UnmetDemand={unmet}"
+            )
+            print(f"    StockBefore={stock_before} StockLeft={stock_left} Flags={'/'.join(flags)}")
+            printed_any = True
+
+        if not printed_any:
+            print("  (no material movement)")
+
+    if day_has_tightness and not tightness_started:
+        print("  >>> SHORTAGE EFFECT START: replenishment constrained <<<")
+        tightness_started = True
+    elif day_has_tightness:
+        print("  >>> SHORTAGE EFFECT CONTINUES: replenishment constrained <<<")
+
+    if day_has_shortage and not shortage_started:
+        print("  >>> STOCKOUT IMPACT START: unmet demand observed <<<")
+        shortage_started = True
+    elif day_has_shortage:
+        print("  >>> STOCKOUT IMPACT CONTINUES: unmet demand persists <<<")
+
+    print("  DC stock:")
     for i_item, item_code in enumerate(md.item_codes):
-        print(f"    {item_code:<14} : {int(on_hand[dc_idx, i_item])}")
+        print(f"    I{i_item + 1} {item_code:<18} {int(on_hand[dc_idx, i_item])}")
+
+    print("  Flags: D=demand F=fill_needed T=supply_tight S=shortage_impact O=flow_ok")
+
+    return shortage_started, tightness_started

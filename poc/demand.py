@@ -7,13 +7,14 @@ All randomness is seeded deterministically from cfg["seed"].
 
 import numpy as np
 from datetime import timedelta
+import scenario_engine
 
 
 def _iso_week(d):
     return d.isocalendar()[1]   # ISO week number 1-52
 
 
-def build_demand(cfg, md, dates) -> np.ndarray:
+def build_demand(cfg, md, dates):
     """
     cfg    : CONFIG dict
     md     : MasterData
@@ -100,6 +101,10 @@ def build_demand(cfg, md, dates) -> np.ndarray:
     demand_int = np.round(demand).astype(np.int32)
     demand_int = np.maximum(demand_int, 0)
 
+    story_state = scenario_engine.apply_demand_story_overrides(cfg, md, demand_int, dates)
+
     total = demand_int.sum()
     print(f"  Demand matrix        — shape {demand_int.shape}, total units={total:,}")
-    return demand_int
+    if story_state.get("pack", "none") != "none":
+        print(f"  Scenario pack        — {story_state['pack']}")
+    return demand_int, story_state

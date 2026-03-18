@@ -1,6 +1,2 @@
 ItemCode|ProductDescription|ExternalItemMasterID|SizeName|SizeTypeName|StyleCode|ColorCode|VariantCode|ActiveFlag
-ITM_BAS_0001|Black Basics XS (BSC_001)|EXT-ITM_BAS_0001|XS|Alpha|BSC_001|Black|BSC_001-BLA-XS|1
-ITM_BAS_0002|White Basics S (BSC_002)|EXT-ITM_BAS_0002|S|Alpha|BSC_002|White|BSC_002-WHI-S|1
-ITM_TOP_0003|Black Tops XS (TOP_001)|EXT-ITM_TOP_0003|XS|Alpha|TOP_001|Black|TOP_001-BLA-XS|1
-ITM_TOP_0004|White Tops S (TOP_002)|EXT-ITM_TOP_0004|S|Alpha|TOP_002|White|TOP_002-WHI-S|1
-ITM_BOT_0005|Black Bottoms 28 (BTM_001)|EXT-ITM_BOT_0005|28|Waist|BTM_001|Black|BTM_001-BLA-28|1
+ITM_CHIPS_8OZ|Potato Chips 8oz|EXT-ITM_CHIPS_8OZ|One Size|Pack|SNK_001|Yellow|SNK_001-YEL-One Size|1

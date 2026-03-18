@@ -13,10 +13,18 @@ CONFIG = {
     # "winter" : start October 1 – outerwear/footwear peak, formalwear holiday spike
     "scenario": "summer",
 
+    # Story overlays on top of baseline demand/supply behavior.
+    # Values: "none", "potato_chips_story", "blue_jeans_story"
+    "scenario_pack": "potato_chips_story",
+    "simulation_engine": "chips_only",
+    "prompt_initial_stock": True,
+    "initial_stock_dc": 0,
+    "initial_stock_stores": {},
+
     # ── Scale ──────────────────────────────────────────────────────────────────
     "store_count": 2,
     "dc_count": 1,
-    "item_count": 5,
+    "item_count": 1,
     "supplier_count": 3,
 
     # ── History horizon ────────────────────────────────────────────────────────
@@ -45,6 +53,23 @@ CONFIG = {
         {"code": "OUTERWEAR",  "description": "Outerwear & Coats",    "count": 0, "velocity": "slow",   "seasonal": "strongwinter"},
         {"code": "ACCESSORIES","description": "Accessories",          "count": 0, "velocity": "lumpy",  "seasonal": "holiday"},
         {"code": "FORMALWEAR", "description": "Formalwear",           "count": 0, "velocity": "lumpy",  "seasonal": "formalholiday"},
+    ],
+
+    # Optional explicit catalog for narrative scenarios.
+    # When provided, master-data generation uses these items in this exact order.
+    "story_items": [
+        {
+            "code": "ITM_CHIPS_8OZ",
+            "description": "Potato Chips 8oz",
+            "category": "BASICS",
+            "velocity": "fast",
+            "seasonal": "flat",
+            "size": "One Size",
+            "size_type": "Pack",
+            "style": "SNK_001",
+            "color": "Yellow",
+            "story_key": "chips",
+        },
     ],
 
     # ── Departments (ItemMasterGroup1) ─────────────────────────────────────────

@@ -59,6 +59,7 @@ class MasterData:
     item_velocity: Dict[str, str] = field(default_factory=dict)   # item → velocity class
     item_category: Dict[str, str] = field(default_factory=dict)   # item → category code
     item_seasonal: Dict[str, str] = field(default_factory=dict)   # item → seasonal profile
+    item_story_key: Dict[str, str] = field(default_factory=dict)  # item → story key
     item_sell_price: Dict[str, float] = field(default_factory=dict)
     item_cost_price: Dict[str, float] = field(default_factory=dict)
 
@@ -148,45 +149,86 @@ def build_master_data(cfg, feeds_dir) -> MasterData:
     item_seq = 1
     dept_keys = list(cfg["departments"].keys())
 
-    for cat in cfg["categories"]:
-        cat_code = cat["code"]
-        velocity = cat["velocity"]
-        seasonal = cat["seasonal"]
-        p_range  = cfg["price_ranges"][cat_code]
-        sizes    = SIZES[cat_code]
-        size_type = SIZE_TYPES[cat_code]
-        style_pfx = STYLES_PREFIX[cat_code]
+    story_items = cfg.get("story_items", [])
 
-        for j in range(cat["count"]):
-            item_code = f"ITM_{cat_code[:3]}_{item_seq:04d}"
-            size      = sizes[j % len(sizes)]
-            colour    = COLOURS[j % len(COLOURS)]
-            dept      = dept_keys[j % len(dept_keys)]
-            style     = f"{style_pfx}_{j+1:03d}"
+    if story_items:
+        for j, s_item in enumerate(story_items):
+            item_code = s_item["code"]
+            cat_code = s_item["category"]
+            velocity = s_item["velocity"]
+            seasonal = s_item["seasonal"]
+            p_range = cfg["price_ranges"][cat_code]
+
+            size = s_item.get("size", SIZES[cat_code][j % len(SIZES[cat_code])])
+            size_type = s_item.get("size_type", SIZE_TYPES[cat_code])
+            style = s_item.get("style", f"{STYLES_PREFIX[cat_code]}_{j+1:03d}")
+            colour = s_item.get("color", COLOURS[j % len(COLOURS)])
+            supplier = md.supplier_codes[j % len(md.supplier_codes)]
             sell_price = round(rng.uniform(p_range["min"], p_range["max"]), 2)
             cost_price = round(sell_price * p_range["cost_pct"], 2)
-            supplier   = md.supplier_codes[item_seq % len(md.supplier_codes)]
 
             md.item_codes.append(item_code)
-            md.item_supplier[item_code]    = supplier
-            md.item_velocity[item_code]    = velocity
-            md.item_category[item_code]    = cat_code
-            md.item_seasonal[item_code]    = seasonal
-            md.item_sell_price[item_code]  = sell_price
-            md.item_cost_price[item_code]  = cost_price
+            md.item_supplier[item_code] = supplier
+            md.item_velocity[item_code] = velocity
+            md.item_category[item_code] = cat_code
+            md.item_seasonal[item_code] = seasonal
+            md.item_story_key[item_code] = s_item.get("story_key", "")
+            md.item_sell_price[item_code] = sell_price
+            md.item_cost_price[item_code] = cost_price
 
             item_rows.append({
-                "ItemCode":            item_code,
-                "ProductDescription":  f"{colour} {cat_code.title()} {size} ({style})",
+                "ItemCode": item_code,
+                "ProductDescription": s_item.get("description", f"{colour} {cat_code.title()} {size} ({style})"),
                 "ExternalItemMasterID": f"EXT-{item_code}",
-                "SizeName":            size,
-                "SizeTypeName":        size_type,
-                "StyleCode":           style,
-                "ColorCode":           colour,
-                "VariantCode":         f"{style}-{colour[:3].upper()}-{size}",
-                "ActiveFlag":          1,
+                "SizeName": size,
+                "SizeTypeName": size_type,
+                "StyleCode": style,
+                "ColorCode": colour,
+                "VariantCode": f"{style}-{colour[:3].upper()}-{size}",
+                "ActiveFlag": 1,
             })
             item_seq += 1
+    else:
+        for cat in cfg["categories"]:
+            cat_code = cat["code"]
+            velocity = cat["velocity"]
+            seasonal = cat["seasonal"]
+            p_range  = cfg["price_ranges"][cat_code]
+            sizes    = SIZES[cat_code]
+            size_type = SIZE_TYPES[cat_code]
+            style_pfx = STYLES_PREFIX[cat_code]
+
+            for j in range(cat["count"]):
+                item_code = f"ITM_{cat_code[:3]}_{item_seq:04d}"
+                size      = sizes[j % len(sizes)]
+                colour    = COLOURS[j % len(COLOURS)]
+                dept      = dept_keys[j % len(dept_keys)]
+                style     = f"{style_pfx}_{j+1:03d}"
+                sell_price = round(rng.uniform(p_range["min"], p_range["max"]), 2)
+                cost_price = round(sell_price * p_range["cost_pct"], 2)
+                supplier   = md.supplier_codes[item_seq % len(md.supplier_codes)]
+
+                md.item_codes.append(item_code)
+                md.item_supplier[item_code]    = supplier
+                md.item_velocity[item_code]    = velocity
+                md.item_category[item_code]    = cat_code
+                md.item_seasonal[item_code]    = seasonal
+                md.item_story_key[item_code]   = ""
+                md.item_sell_price[item_code]  = sell_price
+                md.item_cost_price[item_code]  = cost_price
+
+                item_rows.append({
+                    "ItemCode":            item_code,
+                    "ProductDescription":  f"{colour} {cat_code.title()} {size} ({style})",
+                    "ExternalItemMasterID": f"EXT-{item_code}",
+                    "SizeName":            size,
+                    "SizeTypeName":        size_type,
+                    "StyleCode":           style,
+                    "ColorCode":           colour,
+                    "VariantCode":         f"{style}-{colour[:3].upper()}-{size}",
+                    "ActiveFlag":          1,
+                })
+                item_seq += 1
 
     writers.write_feed(f"{feeds_dir}/ItemMaster.txt", item_rows, writers.ITEM_COLUMNS)
     print(f"  ItemMaster.txt       — {len(item_rows)} rows")

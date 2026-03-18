@@ -20,6 +20,7 @@ import calendar_builder
 import master_data as md_builder
 import demand as demand_builder
 import simulation
+import chips_only_simulation
 
 
 CATEGORY_CALENDAR = "calendar and currency feeds"
@@ -151,11 +152,16 @@ def main():
 
     # ── Phase 3: Demand matrix ────────────────────────────────────────────────
     print("\n[3/5] Generating demand matrix ...")
-    demand_array = demand_builder.build_demand(cfg, md, dates)
+    demand_array, story_state = demand_builder.build_demand(cfg, md, dates)
 
     # ── Phase 4: Simulation ───────────────────────────────────────────────────
     print("\n[4/5] Running B1 simulation ...")
-    simulation.run_simulation(cfg, md, dates, demand_array, simulation_txt_dir)
+    if cfg.get("simulation_engine", "default") == "chips_only":
+        chips_only_simulation.run_chips_only_simulation(
+            cfg, md, dates, demand_array, simulation_txt_dir, story_state
+        )
+    else:
+        simulation.run_simulation(cfg, md, dates, demand_array, simulation_txt_dir, story_state)
 
     # ── Phase 5: Excel copies ─────────────────────────────────────────────────
     print("\n[5/5] Creating Excel feed copies ...")

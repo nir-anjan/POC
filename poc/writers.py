@@ -111,6 +111,12 @@ SALES_HISTORY_COLUMNS = [
     "SalesQuantity", "TotalCost", "TotalRevenue", "TotalOriginalRetail",
 ]
 
+# ── DailyScenarioTrace.txt (story diagnostics) ───────────────────────────────
+DAILY_SCENARIO_TRACE_COLUMNS = [
+    "Date", "SiteCode", "ItemCode", "StockBefore", "Demand", "Delivered",
+    "UnmetDemand", "StockLeft", "DCShipQty", "RuleLabel",
+]
+
 # ── CalendarPeriod.txt ─────────────────────────────────────────────────────────
 CALENDAR_PERIOD_COLUMNS = [
     "PeriodType", "PeriodOfYear", "PeriodName", "StartDate", "EndDate",
