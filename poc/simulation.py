@@ -118,6 +118,7 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
     rgap_min     = cfg["remainder_gap_min"]
     rgap_max     = cfg["remainder_gap_max"]
     base_currency = cfg["base_currency"]
+    print_daywise_status = cfg.get("print_daywise_item_status", True)
 
     date_to_idx = {d: i for i, d in enumerate(dates)}
     n_days = len(dates)
@@ -127,6 +128,9 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
     for day_num, D in enumerate(dates):
         D_str  = writers.fmt_date(D)
         D_date = D   # already a date object
+        requested_today = demand_array[:, :, day_num].astype(np.int64)
+        delivered_today = np.zeros((n_stores, n_items), dtype=np.int64)
+        stock_before_today = np.zeros((n_stores, n_items), dtype=np.int64)
 
         # ── Step 1: Post supplier receipts into DC ────────────────────────────
         events_today = receipt_events.pop(D, [])
@@ -312,6 +316,9 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
         # Safety: clamp DC non-negative (should never trigger)
         np.clip(on_hand, 0, None, out=on_hand)
 
+        # Capture store stock right before demand fulfillment.
+        stock_before_today[:, :] = on_hand[:n_stores, :]
+
         # ── Step 5: Fulfill deliveries at stores ──────────────────────────────
         # We need to match back to CO lines we wrote above.
         # Simplified: one delivery note per store per day (covers all delivered items).
@@ -336,6 +343,7 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
                     continue
 
                 on_hand[si, i_item] -= deliv
+                delivered_today[si, i_item] = deliv
                 line_n += 1
                 item_code_str = md.item_codes[i_item]
 
@@ -428,6 +436,17 @@ def run_simulation(cfg, md, dates, demand_array, feeds_dir):
                 })
                 on_order_dc[i_item] += order_qty
 
+        if print_daywise_status:
+            _print_daywise_status(
+                D=D,
+                md=md,
+                requested_today=requested_today,
+                delivered_today=delivered_today,
+                stock_before_today=stock_before_today,
+                on_hand=on_hand,
+                dc_idx=DC_IDX,
+            )
+
         last_on_hand = on_hand.copy()
 
     # ── Step 8: Write final-day inventory snapshot ────────────────────────────
@@ -476,3 +495,34 @@ def _write_all(feeds_dir,
     for filename, rows, columns in feed_map:
         writers.write_feed(f"{feeds_dir}/{filename}", rows, columns)
         print(f"  {filename:<30} — {len(rows):>8,} rows")
+
+
+def _print_daywise_status(
+    D,
+    md,
+    requested_today,
+    delivered_today,
+    stock_before_today,
+    on_hand,
+    dc_idx,
+):
+    """Print organized day-wise demand and stock left for each store-item."""
+    print("")
+    print(f"  --- Day {D} ---")
+    print("  store      | item           | stock_before | demand | delivered | stock_left")
+    print("  " + "-" * 83)
+
+    for si, store_code in enumerate(md.store_codes):
+        for i_item, item_code in enumerate(md.item_codes):
+            demand_qty = int(requested_today[si, i_item])
+            delivered_qty = int(delivered_today[si, i_item])
+            stock_before = int(stock_before_today[si, i_item])
+            stock_left = int(on_hand[si, i_item])
+            print(
+                f"  {store_code:<10} | {item_code:<14} | "
+                f"{stock_before:>12} | {demand_qty:>6} | {delivered_qty:>9} | {stock_left:>10}"
+            )
+
+    print("  DC stock by item:")
+    for i_item, item_code in enumerate(md.item_codes):
+        print(f"    {item_code:<14} : {int(on_hand[dc_idx, i_item])}")
