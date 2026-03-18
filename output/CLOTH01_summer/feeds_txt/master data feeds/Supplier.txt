@@ -1,0 +1,4 @@
+SupplierCode|SupplierName|HostSystemLeadTime|SupplierActiveFlag
+SUP_001|ThreadForward Ltd|17|1
+SUP_002|FabricHouse Co|8|1
+SUP_003|NexStyle Garments|7|1

@@ -1,0 +1,3 @@
+SiteGroup2Code|SiteGroup2Description
+Store|Retail Store
+DC|Distribution Centre

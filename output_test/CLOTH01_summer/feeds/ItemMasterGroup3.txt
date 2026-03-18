@@ -1,0 +1,5 @@
+ItemMasterGroup3Code|ItemMasterGroup3Description
+fast|Fast Moving
+medium|Medium Moving
+slow|Slow Moving
+lumpy|Lumpy Moving

@@ -1,0 +1,11 @@
+SupplierCode|SupplierName|HostSystemLeadTime|SupplierActiveFlag
+SUP_001|ThreadForward Ltd|17|1
+SUP_002|FabricHouse Co|8|1
+SUP_003|NexStyle Garments|7|1
+SUP_004|PremierWeave Inc|18|1
+SUP_005|UrbanThread Supply|11|1
+SUP_006|AlphaCloth Group|10|1
+SUP_007|EliteTextile Corp|10|1
+SUP_008|SwiftStitch Ltd|9|1
+SUP_009|GlobalFibre Works|18|1
+SUP_010|ModaCraft Inc|8|1

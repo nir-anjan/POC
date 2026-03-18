@@ -1,0 +1,7 @@
+SiteCode|CurrencyCode|SiteName|CountryCode|SiteStatus|HostSystemLeadTime|SiteRegion|SiteType
+DC_01|USD|Distribution Centre 01|US|O|1|HQ|DC
+STORE_001|USD|Clothing Store NOR001|US|O||Northeast|Store
+STORE_002|USD|Clothing Store SOU002|US|O||South|Store
+STORE_003|USD|Clothing Store WES003|US|O||West|Store
+STORE_004|USD|Clothing Store NOR004|US|O||Northeast|Store
+STORE_005|USD|Clothing Store SOU005|US|O||South|Store

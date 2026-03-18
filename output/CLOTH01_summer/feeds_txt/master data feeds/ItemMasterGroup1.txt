@@ -1,0 +1,4 @@
+ItemMasterGroup1Code|ItemMasterGroup1Description
+MENS|Mens
+WOMENS|Womens
+KIDS|Kids

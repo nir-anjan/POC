@@ -1,0 +1,8 @@
+ItemMasterGroup2Code|ItemMasterGroup2Description
+BASICS|Basics & Essentials
+TOPS|Tops & T-Shirts
+BOTTOMS|Bottoms & Trousers
+FOOTWEAR|Footwear
+OUTERWEAR|Outerwear & Coats
+ACCESSORIES|Accessories
+FORMALWEAR|Formalwear
